@@ -1921,6 +1921,16 @@ body.nbin-on{overflow:hidden}
 .nbxr p{margin:0;font-size:15px;font-weight:600}
 .nbt{position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:9900;max-width:560px;margin:0 auto;background:#14324f;color:#fff;border-radius:14px;padding:12px 14px;font-size:15px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .nbt.er{background:#8e1c1c}
+.nbdel{background:none!important;border:1.5px solid var(--ln)!important;color:#c62828!important}
+.nbdel.on{background:#c62828!important;border-color:#c62828!important;color:#fff!important}
+:root:not([data-theme="light"]) .nbdel:not(.on){color:#ff8a80!important}
+.rdpb5{flex-wrap:wrap}
+.nbfull{flex-basis:100%;margin:2px 0 0}
+/* paneles desde arriba (26 nov, pedido de Arturo; solo en la app con cuentas) */
+.rdo,.rfo,.rdz{align-items:flex-start}
+.rdp,.rfp,.rdzp{border-radius:0 0 18px 18px;padding-top:env(safe-area-inset-top,0px);box-shadow:0 12px 32px rgba(0,0,0,.3);animation:nbdn .18s ease-out}
+@keyframes nbdn{from{transform:translateY(-24px);opacity:.5}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.rdp,.rfp,.rdzp{animation:none}}
 </style>
 <script id="nubeJs">
 /* ---------- Cuentas y nube (Supabase) · copia de prueba 25 nov 2026 ----------
@@ -1980,6 +1990,19 @@ window.rdSaved=function(f,fn,d){try{if(!USER)return;var row=mkRow(f,JSON.parse(J
   IDB.put("cola",{id:row.id,uid:USER.id,row:row,fn:fn,t:Date.now(),err:""}).then(function(){badge();sync()}).catch(function(e){toast("No se pudo guardar el reporte en la cola: "+((e&&e.message)||e),"er",6000)})}
   catch(e){toast("No se pudo preparar el reporte para la nube: "+((e&&e.message)||e),"er",6000)}};
 
+/* ---------- borrar (26 nov): solo se oculta; en la nube queda con fecha en la columna "borrado" ---------- */
+var DEL=LS.get("nb_del")||[],DELERR="",NOCOL=false;
+function isDel(id){return DEL.indexOf(id)>=0}
+async function borrar(r){var id=r.id;if(!isDel(id)){DEL.push(id);LS.set("nb_del",DEL)}
+  try{await IDB.del("cola",id)}catch(e){}try{await IDB.del("mis",id)}catch(e){}
+  Object.keys(RID).forEach(function(f){if(RID[f]&&RID[f].id===id)delete RID[f]});LS.set("nb_rid",RID);
+  if(SRV)SRV=SRV.filter(function(x){return x.id!==id});badge();if(MIS)MIS.draw();
+  toast(navigator.onLine?"Reporte borrado de tu lista.":"Reporte borrado de tu lista; se confirma en la nube cuando haya señal.");sync()}
+async function syncDel(){if(!DEL.length)return;var L=DEL.slice();
+  for(var i=0;i<L.length;i++){var r;try{r=await sb.from("reportes").update({borrado:new Date().toISOString()}).eq("id",L[i])}catch(e){r={error:e}}
+    if(r.error){DELERR=String(r.error.message||r.error);if(/borrado/i.test(DELERR))NOCOL=true;if(isNet(r.error))break;continue}
+    DELERR="";DEL=DEL.filter(function(x){return x!==L[i]});LS.set("nb_del",DEL)}}
+
 /* ---------- subir la cola ---------- */
 var busy=false,COLA=0;
 async function sync(){if(busy||!sb||!USER)return;busy=true;
@@ -1987,7 +2010,8 @@ async function sync(){if(busy||!sb||!USER)return;busy=true;
     for(var i=0;i<L.length;i++){var it=L[i],r;
       try{r=await sb.from("reportes").upsert(it.row,{onConflict:"id"})}catch(e){r={error:e}}
       if(r.error){it.err=String(r.error.message||r.error.code||r.error);it.n=(it.n||0)+1;await IDB.put("cola",it);if(isNet(r.error))break;continue}
-      await IDB.del("cola",it.id);var m=JSON.parse(JSON.stringify(it.row));m.uid=USER.id;m.creado=m.creado||new Date(it.t).toISOString();await IDB.put("mis",m)}}
+      await IDB.del("cola",it.id);var m=JSON.parse(JSON.stringify(it.row));m.uid=USER.id;m.creado=m.creado||new Date(it.t).toISOString();await IDB.put("mis",m)}
+    try{await syncDel()}catch(e){}}
   catch(e){}finally{busy=false;badge();if(MIS)MIS.draw()}}
 async function badge(){var n=0;try{if(USER)n=(await IDB.all("cola")).filter(function(x){return x.uid===USER.id}).length}catch(e){}COLA=n;
   var b=G("nb_bdg");if(b){b.textContent=n;b.style.display=n?"":"none"}
@@ -2043,7 +2067,7 @@ function openPerfil(first){var old=document.querySelector(".nbo");if(old)old.rem
   b.append(el("div","nbsp"),sv,msg,el("div","nbsp"),rb,el("div","nbsp"),out,el("p","nbn","Versión de prueba con cuentas · reportes guardados en la nube."))}
 
 async function salir(b){if(COLA&&!b.dataset.ok){b.dataset.ok="1";b.textContent="Tienes "+COLA+" sin subir. Toca otra vez para salir de todos modos";return}
-  try{await sb.auth.signOut({scope:"local"})}catch(e){}LS.del(AUTHK);USER=null;PERF=null;LS.del("nb_perfil");LS.del("nb_pf_dirty");PFD={};try{await IDB.clear("mis")}catch(e){}
+  try{await sb.auth.signOut({scope:"local"})}catch(e){}LS.del(AUTHK);USER=null;PERF=null;LS.del("nb_perfil");LS.del("nb_pf_dirty");PFD={};DEL=[];LS.del("nb_del");try{await IDB.clear("mis")}catch(e){}
   var o=document.querySelector(".nbo");if(o){o.remove();document.body.style.overflow=""}showLogin()}
 
 /* ---------- entrada ---------- */
@@ -2107,22 +2131,28 @@ function openMis(){var old=document.querySelector(".nbo");if(old)old.remove();
   var exb=btn(null,"Exportar mis reportes a Excel",function(){exportar(ex,exb)});var last=LS.get("nb_exp");
   ex.append(exb,el("p","nbn",last?"Último Excel: "+fmtF(new Date(last).toISOString().slice(0,10)):"Respaldo: exporta tus reportes a Excel cada semana."));
   var open=null;
-  MIS={draw:async function(){var C=[],M=[];try{C=(await IDB.all("cola")).filter(function(x){return USER&&x.uid===USER.id})}catch(e){}try{M=(await IDB.all("mis")).filter(function(x){return USER&&x.uid===USER.id})}catch(e){}
+  MIS={draw:async function(){var C=[],M=[];try{C=(await IDB.all("cola")).filter(function(x){return USER&&x.uid===USER.id&&!isDel(x.id)})}catch(e){}try{M=(await IDB.all("mis")).filter(function(x){return USER&&x.uid===USER.id&&!isDel(x.id)})}catch(e){}
     cola.textContent="";if(C.length){var h=el("div","nbch");h.append(el("h3",null,"Por subir ("+C.length+")"),btn("lk","Subir ahora",function(){if(!navigator.onLine)return toast("Sin señal.","er");sync()}));cola.append(h);
       C.sort(function(a,b){return b.t-a.t}).forEach(function(it){var x=item(it.row,true);if(it.err)x.append(el("div","nberr",isNet({message:it.err})?"Sin señal: se reintenta solo.":"No se pudo subir: "+it.err));cola.append(x)})}
-    var byId={};M.forEach(function(r){byId[r.id]=r});(SRV||[]).forEach(function(r){byId[r.id]=Object.assign({},byId[r.id]||{},r)});C.forEach(function(it){delete byId[it.id]});
+    var byId={};M.forEach(function(r){byId[r.id]=r});(SRV||[]).forEach(function(r){if(!isDel(r.id))byId[r.id]=Object.assign({},byId[r.id]||{},r)});C.forEach(function(it){delete byId[it.id]});
     var all=Object.keys(byId).map(function(k){return byId[k]}).sort(function(a,b){return (b.fecha||"").localeCompare(a.fecha||"")||String(b.creado||"").localeCompare(String(a.creado||""))});
     var t=N(q.value).split(/\s+/).filter(Boolean),F=all.filter(function(r){var s=N([r.serie,r.hospital,r.folio,r.equipo,r.tipo_servicio,r.fecha,fmtF(r.fecha),FN[r.formato]].join(" "));return t.every(function(w){return s.indexOf(w)>=0})});
     st.textContent=SRV?(all.length?(t.length?F.length+" de "+all.length+" reportes":(all.length===1?"1 reporte en tu cuenta":all.length+" reportes en tu cuenta")):"Todavía no tienes reportes guardados en la nube."):(navigator.onLine?"Cargando…":"Sin señal: se muestran los guardados en este teléfono.");
+    if(NOCOL)st.textContent+=" · Falta correr en Supabase el SQL de borrar (columna borrado): los borrados todavía no se ocultan en la nube.";else if(DELERR&&DEL.length)st.textContent+=" · "+DEL.length+" por borrar en la nube.";
     list.textContent="";F.slice(0,100).forEach(function(r){list.append(item(r,false))});if(F.length>100)list.append(el("p","nbn","Mostrando 100 de "+F.length+". Escribe más para filtrar."))}};
   function item(r,enCola){var d=el("div","rdpi nbit"),a=el("div","rdpi1");a.append(el("b",null,fmtF(r.fecha)),el("span","rdpc"+(enCola?" u":""),enCola?"Por subir":FN[r.formato]||r.formato));if(r.folio)a.append(el("span",null,"Folio "+r.folio));
     d.append(a,el("div","rdpi2",[r.equipo,r.serie].filter(Boolean).join(" · ")||"Equipo sin capturar"),el("div","rdpi3",r.hospital||""),el("div","rdpi3",(r.tipo_servicio||"").toLowerCase()));
     var acts=el("div","rdpb5");acts.style.display="none";
-    var ab=btn("pri","Abrir",function(){abrir(r,false,acts)}),ub=btn(null,"Usar de base",function(){abrir(r,true,acts)});acts.append(ub,ab);d.append(acts);
+    var ab=btn("pri","Abrir",function(){abrir(r,false,acts)}),ub=btn(null,"Usar de base",function(){abrir(r,true,acts)}),db=btn("nbdel","Borrar",function(){
+      if(!db.dataset.ok){db.dataset.ok="1";db.textContent="Sí, borrar";db.classList.add("on");setTimeout(function(){db.dataset.ok="";db.textContent="Borrar";db.classList.remove("on")},4000);return}
+      borrar(r)});
+    acts.append(db,ub,ab);if(enCola)acts.append(el("p","nbn nbfull","Borrar un reporte \"Por subir\" lo quita del teléfono: no se sube."));else acts.append(el("p","nbn nbfull","Borrar lo quita de tu lista y del Excel; el administrador lo puede recuperar."));d.append(acts);
     d.addEventListener("click",function(e){if(e.target.closest("button"))return;if(open&&open!==acts)open.style.display="none";acts.style.display=acts.style.display==="none"?"flex":"none";open=acts});return d}
   q.addEventListener("input",function(){MIS.draw()});MIS.draw();
-  if(sb&&USER&&navigator.onLine)sb.from("reportes").select("id,formato,folio,serie,equipo,hospital,tipo_servicio,fecha,version_formato,creado,actualizado").order("fecha",{ascending:false}).limit(2000)
-    .then(function(r){if(r.error){st.textContent="No se pudo leer tu lista: "+r.error.message;return}SRV=r.data||[];if(MIS)MIS.draw()},function(e){st.textContent="Sin conexión con el servidor."})}
+  if(sb&&USER&&navigator.onLine){var cols="id,formato,folio,serie,equipo,hospital,tipo_servicio,fecha,version_formato,creado,actualizado",
+      lee=function(sin){var q=sb.from("reportes").select(cols);if(!sin)q=q.is("borrado",null);return q.order("fecha",{ascending:false}).limit(2000)};
+    lee(false).then(function(r){if(r.error&&/borrado/i.test(r.error.message||"")){NOCOL=true;return lee(true)}return r})
+    .then(function(r){if(r.error){st.textContent="No se pudo leer tu lista: "+r.error.message;return}if(!NOCOL)NOCOL=false;SRV=r.data||[];if(MIS)MIS.draw()},function(e){st.textContent="Sin conexión con el servidor."})}}
 
 async function abrir(r,asBase,acts){var A=window.rdApi,f=r.formato;if(!A||!PX[f])return;var d=r.datos;
   if(!d){try{var c=(await IDB.all("mis")).filter(function(x){return x.id===r.id})[0];if(c&&c.datos)d=c.datos}catch(e){}}
@@ -2169,9 +2199,10 @@ function filas(R){var H=[["Fecha","Formato","Folio","Tipo de servicio","Serie","
     (d.rows||[]).forEach(function(x){var cat,can,des;if(r.formato==="D"){can=x[0];cat=x[1];des=x[2]}else{cat=x[0];can=x[1];des=x[2]}if(!str(cat)&&!str(des))return;var n=Number(can);RF.push([fmtF(r.fecha),r.folio||"",r.serie||"",r.equipo||"",r.hospital||"",str(cat),str(can)&&isFinite(n)?n:str(can),str(des)])})});
   return[{n:"Reportes",rows:H,w:[11,22,10,26,16,22,40,18,26,60,30,17,17,38]},{n:"Refacciones",rows:RF,w:[11,10,16,22,40,16,9,50]}]}
 async function exportar(box,b){var keep=b.textContent;b.disabled=true;b.textContent="Preparando…";var old=box.querySelector(".nbxr");if(old)old.remove();var R=[],src="nube";
-  try{if(!navigator.onLine||!sb)throw new Error("sin señal");for(var from=0;;from+=500){var r=await sb.from("reportes").select("*").order("fecha",{ascending:true}).range(from,from+499);if(r.error)throw r.error;R=R.concat(r.data||[]);if(!r.data||r.data.length<500)break}}
+  try{if(!navigator.onLine||!sb)throw new Error("sin señal");var sin=false;for(var from=0;;from+=500){var q=sb.from("reportes").select("*");if(!sin)q=q.is("borrado",null);var r=await q.order("fecha",{ascending:true}).range(from,from+499);if(r.error&&!sin&&/borrado/i.test(r.error.message||"")){sin=true;NOCOL=true;from-=500;continue}if(r.error)throw r.error;R=R.concat(r.data||[]);if(!r.data||r.data.length<500)break}
+    R=R.filter(function(x){return !x.borrado&&!isDel(x.id)})}
   catch(e){src="telefono";R=[];try{R=(await IDB.all("mis")).filter(function(x){return x.uid===USER.id})}catch(_){}}
-  try{(await IDB.all("cola")).filter(function(x){return x.uid===USER.id}).forEach(function(it){if(!R.some(function(r){return r.id===it.id}))R.push(it.row)})}catch(e){}
+  R=R.filter(function(x){return !isDel(x.id)});try{(await IDB.all("cola")).filter(function(x){return x.uid===USER.id&&!isDel(x.id)}).forEach(function(it){if(!R.some(function(r){return r.id===it.id}))R.push(it.row)})}catch(e){}
   b.disabled=false;b.textContent=keep;if(!R.length)return toast("No hay reportes para exportar.","er");
   var bl=xlsx(filas(R)),who=String((USER&&USER.email)||"").split("@")[0].replace(/[^a-z0-9._-]/gi,""),fn="Reportes_"+who+"_"+hoy()+(src==="telefono"?"_telefono":"")+".xlsx";
   var x=el("div","nbxr");x.append(el("p",null,"Listo: "+R.length+" reportes"+(src==="telefono"?" (sin señal: solo los guardados en este teléfono)":"")+"."));
